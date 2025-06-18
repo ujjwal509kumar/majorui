@@ -1,0 +1,99 @@
+# Node modules
+node_modules/
+
+# Build output
+.next/
+out/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables
+.env
+.env.*.local
+.env.local
+
+# Prisma
+prisma/dev.db
+prisma/*.db
+prisma/migrations/
+prisma/generated/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# VSCode
+.vscode/
+
+# Docker
+docker-compose.override.yml
+docker-compose.*.yml
+*.log
+*.pid
+
+# TypeScript
+*.tsbuildinfo
+
+# Coverage
+coverage/
+
+# Optional npm cache directory
+.npm/
+
+# Optional eslint cache
+.eslintcache
+
+# Turbo repo cache
+.turbo/
+
+# NextAuth session files if using file strategy (optional)
+.nextauth/
+
+# SQLite databases (if used locally)
+*.sqlite
+*.sqlite3
+
+# Public folder (optional, usually contains static files you may want to keep)
+public/
+
+# Models - large files (e.g., ML models >100MB)
+models/
+
+# === FastAPI / Python related ===
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+env/
+
+# Python metadata
+*.egg-info/
+.eggs/
+
+# Python cache
+.mypy_cache/
+.pytest_cache/
+
+# Pydantic generated schema cache
+*.schema.json
+
+# Local dev tools
+*.swp
+*.swo
+
+# Jupyter notebook checkpoints
+.ipynb_checkpoints/
+
+# FastAPI static/media folders if any
+static/
+media/
