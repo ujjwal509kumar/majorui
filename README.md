@@ -53,3 +53,11 @@ Now start the next js app
   npm run dev
 ```
 
+
+## Note
+
+The ``` models/ ``` folder was removed from the Git repository because it contained files exceeding GitHub's file size limit (100 MB).
+
+To run the project successfully, please create a folder named models in the root directory and upload the required model files there manually.
+
+Additionally, open the ```app.py``` file and navigate to line 35, where the model is being loaded. You must update the filename there.
