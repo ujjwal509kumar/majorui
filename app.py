@@ -32,7 +32,7 @@ app.add_middleware(
 
 # Configuration Constants
 MODEL_SAVE_PATH = pathlib.Path('./models')  # Directory where the trained model is saved
-MODEL_FILENAME = 'osteoporosis_resnet50.keras'  # The saved model file name
+MODEL_FILENAME = 'best_osteoporosis_resnet50.keras'  # The saved model file name
 DATA_FOLDER = pathlib.Path('./public/bone_data')  # Directory to save uploaded images and reports
 IMAGES_FOLDER = DATA_FOLDER / 'images'  # Subdirectory for images
 REPORTS_FOLDER = DATA_FOLDER / 'reports'  # Subdirectory for reports
