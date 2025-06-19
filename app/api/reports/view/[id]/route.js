@@ -352,20 +352,7 @@ export async function GET(request, { params }) {
           <div class="diagnosis-confidence">Confidence: ${report.confidence.toFixed(2)}%</div>
         </div>
         
-        <div class="probabilities">
-          <div class="probability-card normal-prob">
-            <div class="probability-value">${report.classProbabilities?.Normal?.toFixed(2) || 0}%</div>
-            <div class="probability-label">Normal</div>
-          </div>
-          <div class="probability-card osteopenia-prob">
-            <div class="probability-value">${report.classProbabilities?.Osteopenia?.toFixed(2) || 0}%</div>
-            <div class="probability-label">Osteopenia</div>
-          </div>
-          <div class="probability-card osteoporosis-prob">
-            <div class="probability-value">${report.classProbabilities?.Osteoporosis?.toFixed(2) || 0}%</div>
-            <div class="probability-label">Osteoporosis</div>
-          </div>
-        </div>
+        
         
         <div class="summary-section">
           <h2 class="section-title">Summary</h2>
