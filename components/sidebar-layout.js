@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
-import { Activity, Home, User, FileText, Settings, LogOut, Menu, X, ChevronRight } from 'lucide-react';
+import { Activity, Home, User, FileText, LogOut, Menu, X, ChevronRight, BarChart2 } from 'lucide-react';
 import { ModeToggle } from './dark-mode';
 import { Button } from './ui/button';
 
@@ -19,6 +19,7 @@ const SidebarLayout = ({ children }) => {
     { label: 'Profile', href: '/dashboard/profile', icon: <User className="w-5 h-5" /> },
     { label: 'Scan', href: '/dashboard/scan', icon: <Activity className="w-5 h-5" /> },
     { label: 'Reports', href: '/dashboard/reports', icon: <FileText className="w-5 h-5" /> },
+    { label: 'Compare', href: '/dashboard/reports/compare', icon: <BarChart2 className="w-5 h-5" /> },
   ];
 
   const handleSignOut = () => {
