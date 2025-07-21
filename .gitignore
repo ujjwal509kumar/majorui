@@ -97,3 +97,6 @@ env/
 # FastAPI static/media folders if any
 static/
 media/
+
+# test files
+test/
