@@ -7,7 +7,6 @@ import fs from 'fs/promises';
 
 export async function GET(request, { params }) {
   try {
-    // Check authentication
     const session = await getServerSession(authOptions);
     if (!session || !session.user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -15,7 +14,6 @@ export async function GET(request, { params }) {
 
     const scanId = params.id;
 
-    // Get the scan from the database
     const scan = await prisma.scan.findUnique({
       where: { id: scanId }
     });
@@ -24,29 +22,24 @@ export async function GET(request, { params }) {
       return NextResponse.json({ error: 'Scan not found' }, { status: 404 });
     }
 
-    // Check if the scan belongs to the current user
     if (scan.userId !== session.user.id) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    // Get the absolute path to the image file
     const imagePath = path.join(process.cwd(), 'public', scan.filePath);
 
-    // Check if the file exists
     try {
       await fs.access(imagePath);
     } catch (error) {
       return NextResponse.json({ error: 'Image file not found' }, { status: 404 });
     }
 
-    // Upload the image to the FastAPI backend
     const formData = new FormData();
     const imageFile = await fs.readFile(imagePath);
-    // Create the blob with the correct MIME type
     const blob = new Blob([imageFile], { type: scan.mimeType || 'image/png' });
     formData.append('file', blob, scan.fileName);
 
-    const uploadResponse = await fetch('http://localhost:8000/upload/', {
+    const uploadResponse = await fetch(`http://localhost:8000/upload/?user_id=${session.user.id}`, {
       method: 'POST',
       body: formData,
     });
@@ -59,8 +52,7 @@ export async function GET(request, { params }) {
     const uploadData = await uploadResponse.json();
     const imageId = uploadData.image_id;
 
-    // Send the image for prediction
-    const predictionResponse = await fetch(`http://localhost:8000/predict/${imageId}`, {
+    const predictionResponse = await fetch(`http://localhost:8000/predict/${imageId}?user_id=${session.user.id}`, {
       method: 'POST',
     });
 
@@ -71,7 +63,6 @@ export async function GET(request, { params }) {
 
     const predictionData = await predictionResponse.json();
 
-    // Create a report in the database
     const report = await prisma.report.create({
       data: {
         scanId: scan.id,
