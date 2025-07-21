@@ -63,6 +63,16 @@ export default function ReportsPage() {
       <div className="p-6">
         <h1 className="text-3xl font-bold mb-6">Bone Analysis Reports</h1>
         
+        {/* Add this button below the heading */}
+        <div className="mb-4">
+          <Button 
+            variant="outline" 
+            onClick={() => window.location.href = '/dashboard/reports/compare'}
+          >
+            Compare Reports
+          </Button>
+        </div>
+        
         <div className="bg-card rounded-lg shadow-md p-6 border border-border">
           {loading ? (
             <div className="text-center py-12">
