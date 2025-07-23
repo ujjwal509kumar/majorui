@@ -8,8 +8,9 @@ import numpy as np
 from PIL import Image, ImageStat
 import cv2
 
-import tensorflow as tf
-from tensorflow import keras
+import torch
+import torch.nn as nn
+from torchvision import transforms, models
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,9 +18,9 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 # Initialize FastAPI app
-app = FastAPI(title="Bone Disease Detection API", 
-              description="API for predicting bone diseases from X-ray images using ResNet50 model",
-              version="1.0.0")
+app = FastAPI(title="Bone Disease Detection API - PyTorch", 
+              description="API for predicting bone diseases from X-ray images using EfficientNet-B4 PyTorch model",
+              version="2.0.0")
 
 # Add CORS middleware to allow cross-origin requests from your Next.js app
 app.add_middleware(
@@ -31,19 +32,24 @@ app.add_middleware(
 )
 
 # Configuration Constants
-MODEL_SAVE_PATH = pathlib.Path('./models')  # Directory where the trained model is saved
-MODEL_FILENAME = 'fine_tuned_balanced_osteoporosis_resnet50.keras'  # The saved model file name
+MODEL_SAVE_PATH = pathlib.Path('./models')  # Directory where the PyTorch model is saved
+MODEL_FILENAME = 'phase1_epoch_19.pth'  # The saved PyTorch model file name
 DATA_FOLDER = pathlib.Path('./public/bone_data')  # Directory to save uploaded images and reports
 IMAGES_FOLDER = DATA_FOLDER / 'images'  # Subdirectory for images
 REPORTS_FOLDER = DATA_FOLDER / 'reports'  # Subdirectory for reports
 
-# Image parameters MUST match the training setup
-IMG_HEIGHT = 224
-IMG_WIDTH = 224
-IMG_SIZE = (IMG_HEIGHT, IMG_WIDTH)
+# Image parameters MUST match the PyTorch training setup
+IMG_SIZE = 512  # Updated to match PyTorch training
+IMG_HEIGHT = IMG_SIZE
+IMG_WIDTH = IMG_SIZE
 
-# Class names MUST match the training setup
-CLASS_NAMES = ['Normal', 'Osteopenia', 'Osteoporosis']
+# Class names MUST match the PyTorch training setup
+CLASS_NAMES = ['normal', 'osteopenia', 'osteoporosis']  # Updated to match PyTorch training
+CLASS_NAMES_DISPLAY = ['Normal', 'Osteopenia', 'Osteoporosis']  # For display purposes
+
+# Device configuration
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+print(f"🔧 API using device: {device}")
 
 # Create necessary directories if they don't exist
 for folder in [DATA_FOLDER, IMAGES_FOLDER, REPORTS_FOLDER]:
@@ -53,8 +59,14 @@ for folder in [DATA_FOLDER, IMAGES_FOLDER, REPORTS_FOLDER]:
 def is_xray_image(image_path: str, debug: bool = False) -> bool:
     """
     Validate if the uploaded image is likely a bone X-ray image based on characteristics
-    observed from actual X-ray samples.
-    Returns True if the image appears to be a bone X-ray, False otherwise.
+    observed from actual X-ray samples in test_high_quality.
+    
+    Updated thresholds based on your processed images:
+    - Mean brightness: 31-38 (very dark)
+    - Contrast: 56-62 (good contrast)
+    - Dark pixel ratio: 0.766-0.802 (mostly dark background)
+    - Bright pixel ratio: 0.050-0.096 (some bright bone structures)
+    - Edge density: 0.0338-0.0616 (moderate edge content)
     """
     try:
         # Open image with PIL
@@ -81,92 +93,73 @@ def is_xray_image(image_path: str, debug: bool = False) -> bool:
             # Convert to grayscale for analysis
             gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
             
-            # Check 1: X-rays have good contrast (based on actual samples: 58-84)
+            # Check 1: X-rays have good contrast (based on your samples: 56-62)
             contrast = gray.std()
             if debug: print(f"Contrast: {contrast:.2f} (need: 40-120)")
-            if contrast < 40 or contrast > 120:  # Adjusted based on real X-ray data
+            if contrast < 40 or contrast > 120:
                 if debug: print("❌ Failed: Contrast out of range")
                 return False
             
             # Check 2: X-rays are grayscale - very low color variation
-            # Calculate color variation across channels
             img_stat = ImageStat.Stat(img)
             color_variance = np.var(img_stat.mean)
-            if debug: print(f"Color variance: {color_variance:.2f} (need: <10)")
-            if color_variance > 10:  # X-rays have almost no color variation
+            if debug: print(f"Color variance: {color_variance:.2f} (need: <15)")
+            if color_variance > 15:  # Slightly more flexible for processed images
                 if debug: print("❌ Failed: Too much color variation")
                 return False
             
-            # Check 3: X-rays have significant dark background
-            # Calculate histogram
+            # Check 3: X-rays have significant dark background (based on your samples: 0.766-0.802)
             hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-            
-            # Dark pixels (0-60) - based on samples: 0.38-0.81
-            dark_pixels = np.sum(hist[0:61])
             total_pixels = gray.shape[0] * gray.shape[1]
-            dark_ratio = dark_pixels / total_pixels
-            if debug: print(f"Dark pixel ratio: {dark_ratio:.3f} (need: >0.30)")
             
-            if dark_ratio < 0.30:  # Adjusted based on actual X-ray data
+            dark_pixels = np.sum(hist[0:61])
+            dark_ratio = dark_pixels / total_pixels
+            if debug: print(f"Dark pixel ratio: {dark_ratio:.3f} (need: >0.60)")
+            
+            if dark_ratio < 0.60:  # Based on your processed images
                 if debug: print("❌ Failed: Not enough dark background")
                 return False
             
-            # Check 4: X-rays have some bright bone structures
-            # Bright pixels (160-255) - based on samples: 0.077-0.373
+            # Check 4: X-rays have some bright bone structures (based on your samples: 0.050-0.096)
             bright_pixels = np.sum(hist[160:256])
             bright_ratio = bright_pixels / total_pixels
-            if debug: print(f"Bright pixel ratio: {bright_ratio:.3f} (need: >0.05)")
+            if debug: print(f"Bright pixel ratio: {bright_ratio:.3f} (need: >0.03)")
             
-            if bright_ratio < 0.05:  # Adjusted based on actual data
+            if bright_ratio < 0.03:  # Based on your processed data
                 if debug: print("❌ Failed: Not enough bright structures")
                 return False
             
-            # Check 5: Edge detection - adjusted based on actual samples
+            # Check 5: Edge detection (based on your samples: 0.0338-0.0616)
             edges = cv2.Canny(gray, 30, 120)
             edge_density = np.sum(edges > 0) / total_pixels
-            if debug: print(f"Edge density: {edge_density:.4f} (need: 0.002-0.15)")
+            if debug: print(f"Edge density: {edge_density:.4f} (need: 0.01-0.15)")
             
-            # Based on samples: 0.0023-0.0862, so very flexible range
-            if edge_density < 0.002 or edge_density > 0.15:
+            if edge_density < 0.01 or edge_density > 0.15:
                 if debug: print("❌ Failed: Edge density out of range")
                 return False
             
-            # Check 6: Aspect ratio - X-rays can be tall (based on samples: 1.22-2.56)
+            # Check 6: Aspect ratio - should be square or close for processed images
             height, width = gray.shape
             aspect_ratio = max(width, height) / min(width, height)
-            if debug: print(f"Aspect ratio: {aspect_ratio:.2f} (need: <5)")
-            if aspect_ratio > 5:  # More flexible for X-ray formats
+            if debug: print(f"Aspect ratio: {aspect_ratio:.2f} (need: <3)")
+            if aspect_ratio > 3:  # More strict for processed images
                 if debug: print("❌ Failed: Aspect ratio too extreme")
                 return False
             
-            # Check 7: Mean brightness range (based on samples: 31-102)
+            # Check 7: Mean brightness range (based on your samples: 31-38)
             mean_brightness = np.mean(gray)
-            if debug: print(f"Mean brightness: {mean_brightness:.2f} (need: 20-150)")
-            if mean_brightness < 20 or mean_brightness > 150:
+            if debug: print(f"Mean brightness: {mean_brightness:.2f} (need: 20-80)")
+            if mean_brightness < 20 or mean_brightness > 80:  # Adjusted for processed images
                 if debug: print("❌ Failed: Brightness out of range")
                 return False
             
-            # Check 8: Local variance check - more flexible
-            # Based on samples: 0.51-4.89, some X-rays can be quite uniform
-            kernel = np.ones((5,5), np.float32) / 25
-            local_mean = cv2.filter2D(gray.astype(np.float32), -1, kernel)
-            local_variance = cv2.filter2D((gray.astype(np.float32) - local_mean)**2, -1, kernel)
-            avg_local_std = np.mean(np.sqrt(local_variance))
-            if debug: print(f"Average local std: {avg_local_std:.2f} (need: >0.3)")
-            
-            # Much more flexible - some X-rays are quite uniform
-            if avg_local_std < 0.3:  # Very low threshold
-                if debug: print("❌ Failed: Image too uniform")
-                return False
-            
-            # Check 9: Saturation check - X-rays should be grayscale
-            # Based on samples: 0.00-0.02, very low saturation
+            # Check 8: Saturation check - processed X-rays should be grayscale
             hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
             saturation = hsv[:,:,1]
             avg_saturation = np.mean(saturation)
-            if debug: print(f"Average saturation: {avg_saturation:.2f} (need: <20)")
+            if debug: print(f"Average saturation: {avg_saturation:.2f} (need: <25)")
             
-            if avg_saturation > 20:  # X-rays should have very low saturation
+            if avg_saturation > 25:  # Slightly more flexible for processed images
                 if debug: print("❌ Failed: Too much color saturation")
                 return False
             
@@ -177,22 +170,76 @@ def is_xray_image(image_path: str, debug: bool = False) -> bool:
         print(f"Error validating X-ray image: {e}")
         return False
 
-# Load the model at startup
+# PyTorch Model Architecture (same as training)
+class OptimizedOsteoporosisModel(nn.Module):
+    def __init__(self, num_classes=3):
+        super(OptimizedOsteoporosisModel, self).__init__()
+        
+        # Use EfficientNet-B4 as backbone
+        self.backbone = models.efficientnet_b4(pretrained=False)  # No pretrained for loading
+        
+        # Get the number of features from the backbone
+        num_features = self.backbone.classifier[1].in_features
+        
+        # Replace classifier with custom head
+        self.backbone.classifier = nn.Sequential(
+            nn.Dropout(0.5),
+            nn.Linear(num_features, 512),
+            nn.BatchNorm1d(512),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.4),
+            
+            nn.Linear(512, 256),
+            nn.BatchNorm1d(256),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.3),
+            
+            nn.Linear(256, 128),
+            nn.BatchNorm1d(128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.2),
+            
+            nn.Linear(128, num_classes)
+        )
+    
+    def forward(self, x):
+        return self.backbone(x)
+
+# PyTorch image preprocessing
+transform = transforms.Compose([
+    transforms.ToPILImage(),
+    transforms.Resize((IMG_SIZE, IMG_SIZE)),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
+])
+
+# Load the PyTorch model at startup
 model = None
 
 @app.on_event("startup")
 async def startup_event():
     global model
     model_full_path = MODEL_SAVE_PATH / MODEL_FILENAME
+    
     if model_full_path.exists():
         try:
-            # Use keras.models.load_model with compile=False for better compatibility
-            model = keras.models.load_model(str(model_full_path), compile=False)
-            print(f"Model loaded successfully from {model_full_path}")
+            # Create model instance
+            model = OptimizedOsteoporosisModel(num_classes=len(CLASS_NAMES))
+            
+            # Load checkpoint
+            checkpoint = torch.load(model_full_path, map_location=device)
+            model.load_state_dict(checkpoint['model_state_dict'])
+            model.to(device)
+            model.eval()
+            
+            print(f"✅ PyTorch model loaded successfully from {model_full_path}")
+            print(f"🔧 Model on device: {next(model.parameters()).device}")
+            
         except Exception as e:
-            print(f"Error loading model: {e}")
+            print(f"❌ Error loading PyTorch model: {e}")
+            model = None
     else:
-        print(f"Model file {model_full_path} does not exist. API will not be able to make predictions.")
+        print(f"❌ Model file {model_full_path} does not exist. API will not be able to make predictions.")
 
 # Pydantic models
 class PredictionResponse(BaseModel):
@@ -209,11 +256,11 @@ class ReportData(BaseModel):
     confidence: float
     class_probabilities: Dict[str, float]
     timestamp: str
-    user_id: str = None  # Optional, can be added later for user-specific reports
+    user_id: str = None
 
 @app.get("/")
 async def root():
-    return {"message": "Welcome to the Bone Disease Detection API"}
+    return {"message": "Welcome to the Bone Disease Detection API - PyTorch Version"}
 
 @app.post("/upload/", response_model=dict)
 async def upload_image(file: UploadFile = File(...), user_id: str = Query(None)):
@@ -249,10 +296,8 @@ async def upload_image(file: UploadFile = File(...), user_id: str = Query(None))
             "user_id": user_id
         }
     except HTTPException:
-        # Re-raise HTTP exceptions (like the X-ray validation error)
         raise
     except Exception as e:
-        # Clean up file if there was an error
         if image_path.exists():
             os.remove(image_path)
         raise HTTPException(status_code=500, detail=f"Error uploading file: {str(e)}")
@@ -263,14 +308,14 @@ async def predict_image(image_id: str, user_id: str = Query(None)):
     
     # Check if model is loaded
     if model is None:
-        raise HTTPException(status_code=503, detail="Model not loaded. Please try again later.")
+        raise HTTPException(status_code=503, detail="PyTorch model not loaded. Please try again later.")
     
     # Find the image file with the given ID
     image_files = list(IMAGES_FOLDER.glob(f"{image_id}*"))
     if not image_files:
         raise HTTPException(status_code=404, detail=f"Image with ID {image_id} not found")
     
-    image_path = image_files[0]  # Take the first matching file
+    image_path = image_files[0]
     
     # Double-check that the image is still a valid X-ray before prediction
     if not is_xray_image(str(image_path)):
@@ -280,35 +325,27 @@ async def predict_image(image_id: str, user_id: str = Query(None)):
         )
     
     try:
-        # Load and preprocess the image using TensorFlow directly
-        img_raw = tf.io.read_file(str(image_path))
-        img = tf.image.decode_image(img_raw, channels=3)
-        img = tf.image.resize(img, [IMG_HEIGHT, IMG_WIDTH])
-        img = tf.cast(img, tf.float32) / 255.0
-        img = tf.expand_dims(img, axis=0)
+        # Load and preprocess the image using PyTorch
+        image = cv2.imread(str(image_path))
+        image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
         
-        # Make prediction - modified to handle TensorFlow 2.19.0
-        predictions = model.predict(img)
+        # Apply transforms
+        image_tensor = transform(image).unsqueeze(0).to(device)
         
-        # Handle different prediction output formats
-        if isinstance(predictions, list):
-            pred_array = predictions[0]
-        else:
-            pred_array = predictions
-            
-        # Apply softmax if needed
-        if pred_array.shape[-1] == len(CLASS_NAMES):
-            scores = tf.nn.softmax(pred_array).numpy()[0]
-        else:
-            scores = pred_array[0]
+        # Make prediction
+        with torch.no_grad():
+            outputs = model(image_tensor)
+            probabilities = torch.softmax(outputs, dim=1)
+            predicted_class_idx = torch.argmax(probabilities, dim=1).item()
+            confidence = probabilities[0][predicted_class_idx].item()
         
-        # Get prediction results
-        predicted_class_index = np.argmax(scores)
-        predicted_class_name = CLASS_NAMES[predicted_class_index]
-        confidence = float(100 * np.max(scores))
+        # Get results
+        predicted_class_name = CLASS_NAMES_DISPLAY[predicted_class_idx]
+        confidence_percentage = float(confidence * 100)
         
         # Create class probabilities dictionary
-        class_probs = {class_name: float(scores[i]*100) for i, class_name in enumerate(CLASS_NAMES)}
+        probs_numpy = probabilities[0].cpu().numpy()
+        class_probs = {CLASS_NAMES_DISPLAY[i]: float(probs_numpy[i] * 100) for i in range(len(CLASS_NAMES_DISPLAY))}
         
         # Generate timestamp
         timestamp = datetime.now().isoformat()
@@ -318,7 +355,7 @@ async def predict_image(image_id: str, user_id: str = Query(None)):
         report_data = ReportData(
             image_id=image_id,
             predicted_class=predicted_class_name,
-            confidence=confidence,
+            confidence=confidence_percentage,
             class_probabilities=class_probs,
             timestamp=timestamp,
             user_id=user_id
@@ -332,13 +369,14 @@ async def predict_image(image_id: str, user_id: str = Query(None)):
         return PredictionResponse(
             image_id=image_id,
             predicted_class=predicted_class_name,
-            confidence=confidence,
+            confidence=confidence_percentage,
             class_probabilities=class_probs,
             report_id=report_id,
             timestamp=timestamp
         )
+        
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error during prediction: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error during PyTorch prediction: {str(e)}")
 
 # Endpoint to get list of reports
 @app.get("/reports/", response_model=List[dict])
@@ -349,7 +387,7 @@ async def list_reports():
             try:
                 with open(report_file, "r") as f:
                     report_data = json.load(f)
-                    report_data["report_id"] = report_file.stem  # Add the report ID (filename without extension)
+                    report_data["report_id"] = report_file.stem
                     reports.append(report_data)
             except Exception as e:
                 print(f"Error reading report {report_file}: {e}")
@@ -367,14 +405,12 @@ async def list_user_reports(user_id: str):
             try:
                 with open(report_file, "r") as f:
                     report_data = json.load(f)
-                    # Only include reports for this specific user
                     if report_data.get("user_id") == user_id:
                         report_data["report_id"] = report_file.stem
                         reports.append(report_data)
             except Exception as e:
                 print(f"Error reading report {report_file}: {e}")
     
-    # Sort reports by timestamp (newest first)
     reports.sort(key=lambda x: x.get("timestamp", ""), reverse=True)
     return reports
 
@@ -401,7 +437,6 @@ async def get_user_analytics(user_id: str):
             "health_trend": "No data available"
         }
     
-    # Sort by timestamp
     reports.sort(key=lambda x: x.get("timestamp", ""))
     
     # Calculate analytics
@@ -415,11 +450,9 @@ async def get_user_analytics(user_id: str):
         confidence = report.get("confidence", 0)
         timestamp = report.get("timestamp", "")
         
-        # Count classes
         class_counts[predicted_class] = class_counts.get(predicted_class, 0) + 1
         confidences.append(confidence)
         
-        # Timeline data
         timeline_data.append({
             "date": timestamp,
             "class": predicted_class,
@@ -427,7 +460,6 @@ async def get_user_analytics(user_id: str):
             "report_id": report.get("report_id", "")
         })
     
-    # Calculate confidence stats
     confidence_stats = {
         "average": sum(confidences) / len(confidences) if confidences else 0,
         "min": min(confidences) if confidences else 0,
@@ -437,7 +469,7 @@ async def get_user_analytics(user_id: str):
     # Determine health trend
     health_trend = "Stable"
     if len(reports) >= 2:
-        recent_classes = [r.get("predicted_class") for r in reports[-3:]]  # Last 3 scans
+        recent_classes = [r.get("predicted_class") for r in reports[-3:]]
         if "Osteoporosis" in recent_classes:
             health_trend = "Needs Attention"
         elif "Osteopenia" in recent_classes and "Normal" not in recent_classes[-2:]:
@@ -473,27 +505,23 @@ async def get_report(report_id: str):
 async def validate_xray_image(file: UploadFile = File(...)):
     """
     Validate if an uploaded image is a bone X-ray without saving it permanently.
+    Updated for processed X-ray images.
     """
-    # Validate file is an image
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
     
-    # Create a temporary file for validation
     temp_id = str(uuid.uuid4())
     file_extension = os.path.splitext(file.filename)[1]
     temp_filename = f"temp_{temp_id}{file_extension}"
     temp_path = IMAGES_FOLDER / temp_filename
     
     try:
-        # Save file temporarily
         contents = await file.read()
         with open(temp_path, "wb") as f:
             f.write(contents)
         
-        # Validate if it's an X-ray
-        is_valid_xray = is_xray_image(str(temp_path))
+        is_valid_xray = is_xray_image(str(temp_path), debug=True)
         
-        # Clean up temporary file
         os.remove(temp_path)
         
         return {
@@ -503,7 +531,6 @@ async def validate_xray_image(file: UploadFile = File(...)):
         }
         
     except Exception as e:
-        # Clean up temporary file if it exists
         if temp_path.exists():
             os.remove(temp_path)
         raise HTTPException(status_code=500, detail=f"Error validating image: {str(e)}")
@@ -515,8 +542,19 @@ async def get_image(image_id: str):
     if not image_files:
         raise HTTPException(status_code=404, detail=f"Image with ID {image_id} not found")
     
-    image_path = image_files[0]  # Take the first matching file
+    image_path = image_files[0]
     return {"image_path": str(image_path)}
+
+# Health check endpoint
+@app.get("/health")
+async def health_check():
+    return {
+        "status": "healthy",
+        "model_loaded": model is not None,
+        "device": str(device),
+        "pytorch_version": torch.__version__,
+        "cuda_available": torch.cuda.is_available()
+    }
 
 if __name__ == "__main__":
     import uvicorn
