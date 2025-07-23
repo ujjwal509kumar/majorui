@@ -154,9 +154,7 @@ export default function Login() {
           Continue with Google
         </Button>
 
-        <div gsap-animate="login-element" className="text-center mt-6 text-sm text-muted-foreground">
-          <p>Don&apos;t have an account? <Link href="#" className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 font-medium">Contact your administrator</Link></p>
-        </div>
+        
       </div>
     </main>
   );
