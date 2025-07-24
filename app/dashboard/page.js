@@ -405,7 +405,7 @@ export default function Dashboard() {
                         className="w-3 h-3 rounded-full"
                         style={{ backgroundColor: entry.color }}
                       ></div>
-                      <span className="text-xs sm:text-sm font-medium text-foreground">
+                      <span className="text-xs sm:text-sm font-medium !text-slate-900 dark:!text-slate-100">
                         {entry.name}: {entry.value}
                       </span>
                     </div>
