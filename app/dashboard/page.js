@@ -21,7 +21,9 @@ import {
   BarChart,
   Bar,
   Area,
-  AreaChart
+  AreaChart,
+  LineChart,
+  Line
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
 import {
@@ -119,18 +121,30 @@ export default function Dashboard() {
     );
   }
 
-  // Prepare chart data
-  const timelineData = analytics?.timeline_data?.map(item => ({
+  // Prepare chart data - confidence is already in percentage format from API
+  const timelineData = analytics?.timeline_data?.map((item, index) => ({
     ...item,
     date: format(parseISO(item.date), 'MMM dd'),
-    confidenceValue: item.confidence
+    dateTime: format(parseISO(item.date), 'MMM dd HH:mm'), // Include time for uniqueness
+    confidenceValue: item.confidence, // API already returns percentage values (e.g., 85.5)
+    scanIndex: index, // Add unique index for each scan
+    uniqueKey: `${item.date}-${index}` // Unique key for each scan
   })) || [];
+
+  // Timeline data is ready for chart display
 
   const pieData = Object.entries(analytics?.class_distribution || {}).map(([key, value]) => ({
     name: key,
     value: value,
     color: COLORS[key]
-  }));
+  })).filter(item => item.value > 0) || [];
+
+  // Add fallback data if no data exists
+  const displayPieData = pieData.length > 0 ? pieData : [
+    { name: 'Normal', value: 0, color: COLORS.Normal },
+    { name: 'Osteopenia', value: 0, color: COLORS.Osteopenia },
+    { name: 'Osteoporosis', value: 0, color: COLORS.Osteoporosis }
+  ];
 
   const getHealthStatusIcon = (trend) => {
     switch (trend) {
@@ -303,37 +317,70 @@ export default function Dashboard() {
                   <span className="text-sm sm:text-base">Scan Timeline & Confidence</span>
                 </h3>
                 <ResponsiveContainer width="100%" height={250} className="sm:h-[300px]">
-                  <AreaChart data={timelineData}>
+                  <AreaChart data={timelineData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <defs>
+                      <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.1} />
+                      </linearGradient>
+                    </defs>
                     <CartesianGrid
                       strokeDasharray="3 3"
                       stroke="hsl(var(--border))"
                       className="opacity-30"
                     />
                     <XAxis
-                      dataKey="date"
+                      dataKey="uniqueKey"
                       tick={{ fontSize: 12, fill: 'hsl(var(--foreground))' }}
                       axisLine={{ stroke: 'hsl(var(--border))' }}
                       tickLine={{ stroke: 'hsl(var(--border))' }}
+                      tickFormatter={(value, index) => {
+                        // Show clean date format but use unique key internally
+                        const dataPoint = timelineData.find(item => item.uniqueKey === value);
+                        return dataPoint ? dataPoint.date : value;
+                      }}
                     />
                     <YAxis
                       tick={{ fontSize: 12, fill: 'hsl(var(--foreground))' }}
                       axisLine={{ stroke: 'hsl(var(--border))' }}
                       tickLine={{ stroke: 'hsl(var(--border))' }}
+                      domain={[0, 100]}
                     />
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: 'hsl(var(--card))',
-                        border: '1px solid hsl(var(--border))',
+                        backgroundColor: '#1f2937',
+                        border: '1px solid #374151',
                         borderRadius: '8px',
-                        color: 'hsl(var(--foreground))',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                        color: '#f9fafb',
+                        boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+                        fontSize: '14px',
+                        fontWeight: '500',
+                        padding: '12px'
                       }}
-                      formatter={(value, name) => [
-                        `${value.toFixed(1)}%`,
-                        'Confidence'
-                      ]}
-                      labelFormatter={(label) => `Date: ${label}`}
-                      labelStyle={{ color: 'hsl(var(--foreground))' }}
+                      formatter={(value, name, props) => {
+                        // Use the exact same value that's shown on the graph
+                        const graphValue = props.payload?.confidenceValue;
+                        
+                        return [
+                          `${graphValue.toFixed(1)}%`,
+                          'Confidence',
+                          props.payload?.class ? `Class: ${props.payload.class}` : ''
+                        ];
+                      }}
+                      labelFormatter={(label) => {
+                        // Find the data point and show date with time
+                        const dataPoint = timelineData.find(item => item.uniqueKey === label);
+                        return dataPoint ? `📅 ${dataPoint.dateTime}` : `📅 ${label}`;
+                      }}
+                      labelStyle={{
+                        color: '#f9fafb',
+                        fontWeight: '600',
+                        marginBottom: '8px'
+                      }}
+                      itemStyle={{
+                        color: '#3B82F6',
+                        fontWeight: '700'
+                      }}
                     />
                     <Area
                       type="monotone"
@@ -342,15 +389,24 @@ export default function Dashboard() {
                       fill="url(#colorGradient)"
                       fillOpacity={0.3}
                       strokeWidth={3}
-                      dot={{ fill: '#3B82F6', strokeWidth: 2, r: 4 }}
-                      activeDot={{ r: 6, stroke: '#3B82F6', strokeWidth: 2, fill: '#ffffff' }}
+                      dot={(props) => {
+                        const { cx, cy } = props;
+                        return (
+                          <circle
+                            cx={cx}
+                            cy={cy}
+                            r={6}
+                            fill="#3B82F6"
+                            stroke="#ffffff"
+                            strokeWidth={2}
+                            opacity={1}
+                            style={{ cursor: 'pointer' }}
+                          />
+                        );
+                      }}
+                      activeDot={false}
+                      connectNulls={false}
                     />
-                    <defs>
-                      <linearGradient id="colorGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
-                        <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.1} />
-                      </linearGradient>
-                    </defs>
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
@@ -363,8 +419,17 @@ export default function Dashboard() {
                 </h3>
                 <ResponsiveContainer width="100%" height={250} className="sm:h-[300px]">
                   <PieChart>
+                    <defs>
+                      <filter id="pieGlow">
+                        <feGaussianBlur stdDeviation="4" result="coloredBlur" />
+                        <feMerge>
+                          <feMergeNode in="coloredBlur" />
+                          <feMergeNode in="SourceGraphic" />
+                        </feMerge>
+                      </filter>
+                    </defs>
                     <Pie
-                      data={pieData}
+                      data={displayPieData}
                       cx="50%"
                       cy="50%"
                       outerRadius={80}
@@ -372,26 +437,52 @@ export default function Dashboard() {
                       dataKey="value"
                       label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
                       labelLine={false}
+                      animationBegin={0}
+                      animationDuration={1000}
                     >
-                      {pieData.map((entry, index) => (
+                      {displayPieData.map((entry, index) => (
                         <Cell
                           key={`cell-${index}`}
                           fill={entry.color}
-                          stroke="hsl(var(--card))"
+                          stroke="hsl(var(--background))"
                           strokeWidth={2}
+                          className="hover:opacity-80 transition-all duration-300"
+                          onMouseEnter={(e) => {
+                            e.target.style.filter = 'url(#pieGlow)';
+                            e.target.style.transform = 'scale(1.05)';
+                            e.target.style.transformOrigin = 'center';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.target.style.filter = 'none';
+                            e.target.style.transform = 'scale(1)';
+                          }}
                         />
                       ))}
                     </Pie>
                     <Tooltip
                       contentStyle={{
-                        backgroundColor: 'hsl(var(--popover))',
-                        border: '1px solid hsl(var(--border))',
+                        backgroundColor: '#1f2937',
+                        border: '1px solid #374151',
                         borderRadius: '8px',
-                        color: 'hsl(var(--popover-foreground))',
-                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                        color: '#f9fafb',
+                        boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+                        fontSize: '14px',
+                        fontWeight: '500'
                       }}
+                      formatter={(value, name) => [
+                        <span key="value" style={{ color: '#f9fafb', fontWeight: '600' }}>
+                          {value} scans ({((value / (displayPieData.reduce((sum, item) => sum + item.value, 0) || 1)) * 100).toFixed(1)}%)
+                        </span>,
+                        <span key="name" style={{ color: '#d1d5db' }}>
+                          {name}
+                        </span>
+                      ]}
                       labelStyle={{
-                        color: 'hsl(var(--popover-foreground))'
+                        color: '#f9fafb',
+                        fontWeight: '600'
+                      }}
+                      itemStyle={{
+                        color: '#f9fafb'
                       }}
                     />
                   </PieChart>
@@ -399,16 +490,29 @@ export default function Dashboard() {
 
                 {/* Interactive Legend */}
                 <div className="mt-4 flex flex-wrap justify-center gap-2 sm:gap-4">
-                  {pieData.map((entry, index) => (
-                    <div key={index} className="flex items-center gap-2">
+                  {displayPieData.map((entry, index) => (
+                    <motion.div
+                      key={index}
+                      className="flex items-center gap-2 p-2 rounded-lg hover:bg-muted/50 cursor-pointer transition-all duration-300 group"
+                      whileHover={{ scale: 1.05 }}
+                      whileTap={{ scale: 0.95 }}
+                    >
                       <div
-                        className="w-3 h-3 rounded-full"
-                        style={{ backgroundColor: entry.color }}
+                        className="w-4 h-4 rounded-full shadow-sm group-hover:shadow-md transition-shadow duration-300"
+                        style={{
+                          backgroundColor: entry.color,
+                          boxShadow: `0 0 8px ${entry.color}40`
+                        }}
                       ></div>
-                      <span className="text-xs sm:text-sm font-medium !text-slate-900 dark:!text-slate-100">
-                        {entry.name}: {entry.value}
-                      </span>
-                    </div>
+                      <div className="flex flex-col">
+                        <span className="text-xs sm:text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                          {entry.name}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {entry.value} scans ({((entry.value / (displayPieData.reduce((sum, item) => sum + item.value, 0) || 1)) * 100).toFixed(1)}%)
+                        </span>
+                      </div>
+                    </motion.div>
                   ))}
                 </div>
               </div>
@@ -421,46 +525,105 @@ export default function Dashboard() {
                 <span className="text-sm sm:text-base">Detailed Scan History</span>
               </h3>
               <ResponsiveContainer width="100%" height={300} className="sm:h-[400px]">
-                <BarChart data={timelineData}>
+                <BarChart data={timelineData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                  <defs>
+                    <linearGradient id="barGradient" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#3B82F6" stopOpacity={0.8} />
+                      <stop offset="100%" stopColor="#1E40AF" stopOpacity={0.6} />
+                    </linearGradient>
+                    <filter id="glow">
+                      <feGaussianBlur stdDeviation="3" result="coloredBlur" />
+                      <feMerge>
+                        <feMergeNode in="coloredBlur" />
+                        <feMergeNode in="SourceGraphic" />
+                      </feMerge>
+                    </filter>
+                  </defs>
                   <CartesianGrid
                     strokeDasharray="3 3"
                     stroke="hsl(var(--border))"
                     className="opacity-30"
                   />
                   <XAxis
-                    dataKey="date"
+                    dataKey="uniqueKey"
                     tick={{ fontSize: 12, fill: 'hsl(var(--foreground))' }}
                     axisLine={{ stroke: 'hsl(var(--border))' }}
                     tickLine={{ stroke: 'hsl(var(--border))' }}
+                    tickFormatter={(value, index) => {
+                      // Show clean date format but use unique key internally
+                      const dataPoint = timelineData.find(item => item.uniqueKey === value);
+                      return dataPoint ? dataPoint.date : value;
+                    }}
                   />
                   <YAxis
                     tick={{ fontSize: 12, fill: 'hsl(var(--foreground))' }}
                     axisLine={{ stroke: 'hsl(var(--border))' }}
                     tickLine={{ stroke: 'hsl(var(--border))' }}
+                    label={{
+                      value: 'Confidence (%)',
+                      angle: -90,
+                      position: 'insideLeft',
+                      style: { textAnchor: 'middle', fill: 'hsl(var(--muted-foreground))' }
+                    }}
                   />
                   <Tooltip
                     contentStyle={{
-                      backgroundColor: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
+                      backgroundColor: '#1f2937',
+                      border: '1px solid #374151',
                       borderRadius: '8px',
-                      color: 'hsl(var(--foreground))',
-                      boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)'
+                      color: '#f9fafb',
+                      boxShadow: '0 10px 25px rgba(0, 0, 0, 0.5)',
+                      fontSize: '14px',
+                      fontWeight: '500'
                     }}
                     formatter={(value, name, props) => [
-                      `${value.toFixed(1)}%`,
-                      'Confidence',
-                      <div key="extra" className="text-xs mt-1">
+                      <span key="value" style={{ color: '#3B82F6', fontWeight: '700', fontSize: '16px' }}>
+                        {value.toFixed(1)}%
+                      </span>,
+                      <span key="label" style={{ color: '#d1d5db' }}>
+                        Confidence
+                      </span>,
+                      <div key="extra" style={{ color: '#9ca3af', fontSize: '12px', marginTop: '4px' }}>
                         Class: {props.payload?.class || 'Unknown'}
                       </div>
                     ]}
-                    labelFormatter={(label) => `Date: ${label}`}
-                    labelStyle={{ color: 'hsl(var(--foreground))' }}
+                    labelFormatter={(label) => {
+                      // Find the data point and show date with time
+                      const dataPoint = timelineData.find(item => item.uniqueKey === label);
+                      return (
+                        <span style={{ color: '#f9fafb', fontWeight: '600' }}>
+                          📅 {dataPoint ? dataPoint.dateTime : label}
+                        </span>
+                      );
+                    }}
+                    labelStyle={{
+                      color: '#f9fafb',
+                      fontWeight: '600'
+                    }}
+                    cursor={{ fill: 'rgba(59, 130, 246, 0.1)' }}
                   />
                   <Bar
                     dataKey="confidenceValue"
-                    fill="#3B82F6"
-                    radius={[4, 4, 0, 0]}
-                    className="hover:opacity-80 transition-opacity"
+                    fill="url(#barGradient)"
+                    radius={[6, 6, 0, 0]}
+                    className="hover:opacity-90 transition-all duration-300"
+                    onMouseEnter={(data, index) => {
+                      // Add glow effect on hover
+                      const bars = document.querySelectorAll('.recharts-bar-rectangle');
+                      if (bars[index]) {
+                        bars[index].style.filter = 'url(#glow)';
+                        bars[index].style.transform = 'scaleY(1.05)';
+                        bars[index].style.transformOrigin = 'bottom';
+                      }
+                    }}
+                    onMouseLeave={(data, index) => {
+                      // Remove glow effect
+                      const bars = document.querySelectorAll('.recharts-bar-rectangle');
+                      if (bars[index]) {
+                        bars[index].style.filter = 'none';
+                        bars[index].style.transform = 'scaleY(1)';
+                      }
+                    }}
                   />
                 </BarChart>
               </ResponsiveContainer>
