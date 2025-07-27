@@ -15,7 +15,7 @@ const Button = React.forwardRef(({ className, children, ...props }, ref) => {
             className: `${className || ''} ${child.props.className || ''}`.trim(),
         });
     }
-    
+
     return (
         <button ref={ref} className={className} {...restProps}>
             {children}
@@ -79,21 +79,21 @@ export default function NotFound() {
         if (animationTimeline.current) {
             animationTimeline.current.kill();
         }
-        
+
         const gsap = window.gsap;
         setIsFlatlined(false);
         gsap.set(blipRef.current, { attr: { r: 4 }, opacity: 1 });
 
         const normalBeat = "M0 50 H 80 Q 85 50 90 55 T 100 50 Q 105 50 110 40 L 115 65 L 120 25 L 125 55 L 130 50 H 220 Q 225 50 230 45 T 240 50 H 400";
         const flatline = "M0 50 H 400";
-        
+
         gsap.set(ekgPathRef.current, { attr: { d: normalBeat } });
-        
+
         const masterTl = gsap.timeline();
         animationTimeline.current = masterTl;
 
         const pulseTl = gsap.timeline({ repeat: 4, repeatDelay: 0.5 });
-        pulseTl.fromTo(ekgPathRef.current, 
+        pulseTl.fromTo(ekgPathRef.current,
             { strokeDasharray: 600, strokeDashoffset: 600 },
             { strokeDashoffset: 0, duration: 2, ease: "power1.inOut" }
         );
@@ -121,7 +121,7 @@ export default function NotFound() {
             duration: 2, ease: "none"
         }, 0);
         flatlineTl.to(blipRef.current, { attr: { r: 0 }, duration: 0.2 }, ">-0.2");
-        
+
         masterTl.add(flatlineTl);
     };
 
@@ -147,8 +147,8 @@ export default function NotFound() {
     return (
         <div className="flex items-center justify-center min-h-screen bg-slate-950 text-gray-300 font-sans p-4 overflow-hidden relative">
             <BackgroundGrid />
-            
-            <motion.div 
+
+            <motion.div
                 className="relative z-10 text-center p-6 sm:p-10 bg-slate-900/70 backdrop-blur-md rounded-2xl shadow-2xl shadow-cyan-500/10 border border-cyan-400/20 max-w-2xl w-full"
                 variants={containerVariants}
                 initial="hidden"
@@ -163,8 +163,8 @@ export default function NotFound() {
                     </svg>
                 </motion.div>
 
-                <motion.h1 
-                    variants={itemVariants} 
+                <motion.h1
+                    variants={itemVariants}
                     className={`text-4xl md:text-5xl font-bold mt-6 mb-2 pb-2 bg-gradient-to-b from-white to-slate-300 bg-clip-text text-transparent ${isFlatlined ? 'flicker' : ''}`}
                 >
                     Page Not Found
@@ -173,8 +173,8 @@ export default function NotFound() {
                     Looks like this page needs medical attention!
                 </motion.p>
 
-                <motion.div 
-                    variants={itemVariants} 
+                <motion.div
+                    variants={itemVariants}
                     className="bg-slate-800/50 border border-slate-700 rounded-lg p-4 sm:p-6 text-left mb-8 transition-all"
                     whileHover={{ scale: 1.02, boxShadow: "0px 0px 20px rgba(6, 182, 212, 0.3)" }}
                 >
@@ -183,12 +183,12 @@ export default function NotFound() {
                         <h2 className="text-lg font-semibold text-white">Diagnosis</h2>
                     </div>
                     <p className="text-slate-400 text-sm sm:text-base leading-relaxed">
-                        The page you&#39;re looking for seems to have gone for a check-up. 
-                        Don&#39;t worry, our medical team (developers) are on it! 
+                        The page you&#39;re looking for seems to have gone for a check-up.
+                        Don&#39;t worry, our medical team (developers) are on it!
                         Let&#39;s get you back to a healthy page.
                     </p>
                 </motion.div>
-                
+
                 <motion.div variants={itemVariants}>
                     <Button asChild size="lg" className="bg-cyan-500 text-slate-900 font-bold hover:bg-cyan-400 transition-all duration-300 ease-in-out shadow-lg shadow-cyan-500/20 group transform hover:scale-105 px-8 py-3 w-full sm:w-auto">
                         <a href="/" className="flex items-center justify-center gap-2">
