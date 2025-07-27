@@ -4,13 +4,13 @@ const nextConfig = {
     remotePatterns: [
       {
         protocol: "https",
-        hostname: "images.unsplash.com", 
-        pathname: "/**",                
+        hostname: "images.unsplash.com",
+        pathname: "/**",
       },
       {
         protocol: "https",
-        hostname: "lh3.googleusercontent.com", 
-        pathname: "/**",               
+        hostname: "lh3.googleusercontent.com",
+        pathname: "/**",
       },
       {
         protocol: "https",
@@ -23,4 +23,3 @@ const nextConfig = {
 };
 
 export default nextConfig;
-  
