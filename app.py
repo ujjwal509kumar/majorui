@@ -55,99 +55,90 @@ for folder in [DATA_FOLDER, IMAGES_FOLDER, REPORTS_FOLDER]:
         folder.mkdir(parents=True)
 
 def is_xray_image(image_path: str, debug: bool = False) -> bool:
-    """
-    Validate if the uploaded image is likely a bone X-ray image based on characteristics
-    observed from actual X-ray samples in test_high_quality.
-    
-    Updated thresholds based on your processed images:
-    - Mean brightness: 31-38 (very dark)
-    - Contrast: 56-62 (good contrast)
-    - Dark pixel ratio: 0.766-0.802 (mostly dark background)
-    - Bright pixel ratio: 0.050-0.096 (some bright bone structures)
-    - Edge density: 0.0338-0.0616 (moderate edge content)
-    """
+
     try:
-       
         with Image.open(image_path) as img:
             if debug:
                 print(f"Analyzing image: {image_path}")
                 print(f"Image size: {img.width} x {img.height}")
             
-            
+            # Basic size check - reasonable minimum
             if img.width < 100 or img.height < 100:
                 if debug: print("❌ Failed: Image too small")
                 return False
             
-         
+            # Convert to RGB if needed
             if img.mode != 'RGB':
                 img = img.convert('RGB')
             
-         
             img_array = np.array(img)
-           
             img_bgr = cv2.cvtColor(img_array, cv2.COLOR_RGB2BGR)
-            
             gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
             
+            # Contrast check based on your data
             contrast = gray.std()
-            if debug: print(f"Contrast: {contrast:.2f} (need: 40-120)")
-            if contrast < 40 or contrast > 120:
+            if debug: print(f"Contrast: {contrast:.2f} (need: 30-120)")
+            if contrast < 30 or contrast > 120:
                 if debug: print("❌ Failed: Contrast out of range")
                 return False
             
+            # Color variance check - X-rays should be mostly grayscale
             img_stat = ImageStat.Stat(img)
             color_variance = np.var(img_stat.mean)
-            if debug: print(f"Color variance: {color_variance:.2f} (need: <15)")
-            if color_variance > 15:  
+            if debug: print(f"Color variance: {color_variance:.2f} (need: <10)")
+            if color_variance > 10:
                 if debug: print("❌ Failed: Too much color variation")
                 return False
             
-            hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
-            total_pixels = gray.shape[0] * gray.shape[1]
-            
-            dark_pixels = np.sum(hist[0:61])
-            dark_ratio = dark_pixels / total_pixels
-            if debug: print(f"Dark pixel ratio: {dark_ratio:.3f} (need: >0.60)")
-            
-            if dark_ratio < 0.60: 
-                if debug: print("❌ Failed: Not enough dark background")
-                return False
-            
-            bright_pixels = np.sum(hist[160:256])
-            bright_ratio = bright_pixels / total_pixels
-            if debug: print(f"Bright pixel ratio: {bright_ratio:.3f} (need: >0.03)")
-            
-            if bright_ratio < 0.03:
-                if debug: print("❌ Failed: Not enough bright structures")
-                return False
-            
-            edges = cv2.Canny(gray, 30, 120)
-            edge_density = np.sum(edges > 0) / total_pixels
-            if debug: print(f"Edge density: {edge_density:.4f} (need: 0.01-0.15)")
-            
-            if edge_density < 0.01 or edge_density > 0.15:
-                if debug: print("❌ Failed: Edge density out of range")
-                return False
-            
-            height, width = gray.shape
-            aspect_ratio = max(width, height) / min(width, height)
-            if debug: print(f"Aspect ratio: {aspect_ratio:.2f} (need: <3)")
-            if aspect_ratio > 3:
-                if debug: print("❌ Failed: Aspect ratio too extreme")
-                return False
-            
+            # Brightness check based on your data range
             mean_brightness = np.mean(gray)
-            if debug: print(f"Mean brightness: {mean_brightness:.2f} (need: 20-80)")
-            if mean_brightness < 20 or mean_brightness > 80: 
+            if debug: print(f"Mean brightness: {mean_brightness:.2f} (need: 30-90)")
+            if mean_brightness < 30 or mean_brightness > 90:
                 if debug: print("❌ Failed: Brightness out of range")
                 return False
             
+            # Histogram analysis
+            hist = cv2.calcHist([gray], [0], None, [256], [0, 256])
+            total_pixels = gray.shape[0] * gray.shape[1]
+            
+            # Dark pixel ratio check
+            dark_pixels = np.sum(hist[0:80])  # Adjusted threshold
+            dark_ratio = dark_pixels / total_pixels
+            if debug: print(f"Dark pixel ratio: {dark_ratio:.3f} (need: >0.35)")
+            if dark_ratio < 0.35:
+                if debug: print("❌ Failed: Not enough dark background")
+                return False
+            
+            # Bright pixel ratio check
+            bright_pixels = np.sum(hist[120:256])  # Adjusted threshold
+            bright_ratio = bright_pixels / total_pixels
+            if debug: print(f"Bright pixel ratio: {bright_ratio:.3f} (need: >0.04)")
+            if bright_ratio < 0.04:
+                if debug: print("❌ Failed: Not enough bright structures")
+                return False
+            
+            # Edge density check
+            edges = cv2.Canny(gray, 30, 120)
+            edge_density = np.sum(edges > 0) / total_pixels
+            if debug: print(f"Edge density: {edge_density:.4f} (need: >0.001)")
+            if edge_density < 0.001:
+                if debug: print("❌ Failed: Edge density too low")
+                return False
+            
+            # Aspect ratio check based on your data
+            height, width = gray.shape
+            aspect_ratio = max(width, height) / min(width, height)
+            if debug: print(f"Aspect ratio: {aspect_ratio:.2f} (need: <4)")
+            if aspect_ratio > 4:
+                if debug: print("❌ Failed: Aspect ratio too extreme")
+                return False
+            
+            # Saturation check - X-rays should have very low saturation
             hsv = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2HSV)
             saturation = hsv[:,:,1]
             avg_saturation = np.mean(saturation)
-            if debug: print(f"Average saturation: {avg_saturation:.2f} (need: <25)")
-            
-            if avg_saturation > 25: 
+            if debug: print(f"Average saturation: {avg_saturation:.2f} (need: <10)")
+            if avg_saturation > 10:
                 if debug: print("❌ Failed: Too much color saturation")
                 return False
             
